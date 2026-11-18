@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>배그 대회 집계 프로그램</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- html2canvas 라이브러리 (표 캡처용) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@500;700;900&display=swap');
+        body { font-family: 'Noto Sans KR', sans-serif; }
+        .font-title { font-family: 'Black Han Sans', sans-serif; }
+        
+        /* 표 스타일 및 1px 슬림 테두리 설정 */
+        table.scoreboard { border-collapse: collapse; width: 100%; background: #fff; color: #111; table-layout: fixed; }
+        
+        /* 셀 표준 높이 및 중앙 정렬 고정 */
+        table.scoreboard th, table.scoreboard td { 
+            border: 1px solid #334155 !important; 
+            padding: 0 !important; 
+            height: 38px !important;
+            box-sizing: border-box !important;
+            vertical-align: middle !important;
+            text-align: center !important;
+        }
+
+        /* 헤더 텍스트 완벽 중앙 정렬 박스 */
+        .exact-center-th {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            width: 100% !important;
+            height: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
+        /* 라운드 헤더 수직 정렬 전용 */
+        .round-header-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+            line-height: 1.2;
+        }
+
+        .chicken-highlight { background-color: #fde68a !important; }
+        input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+        
+        /* [핵심 수정] 입력창의 쏠림 현상을 없애기 위해 셀 높이(38px)와 line-height를 일치시켜 물리적 중앙 배치 */
+        .clean-input {
+            width: 100% !important;
+            height: 38px !important;
+            line-height: 38px !important;
+            text-align: center !important;
+            font-weight: 700;
+            font-size: 0.85rem;
+            background: transparent;
+            border: none;
+            outline: none;
+            padding: 0 !important;
+            margin: 0 !important;
+            vertical-align: middle !important;
+        }
+        .clean-input:hover, .clean-input:focus {
+            background: #f1f5f9;
+            border: 1px solid #cbd5e1;
+            border-radius: 2px;
+        }
+
+        .time-input {
+            width: 100% !important;
+            height: 38px !important;
+            line-height: 38px !important;
+            text-align: center !important;
+            font-weight: 700;
+            font-size: 0.8rem;
+            background: transparent;
+            border: none;
+            outline: none;
+            padding: 0 !important;
+            margin: 0 !important;
+            vertical-align: middle !important;
+        }
+        .time-input:hover, .time-input:focus {
+            background: #f1f5f9;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-white min-h-screen p-4">
+
+    <!-- 상단 탭 전환 메뉴 -->
+    <div class="max-w-[1400px] mx-auto flex gap-2 mb-4">
+        <button onclick="switchTab('team')" id="teamTabBtn" class="px-6 py-2.5 rounded-xl font-black text-base bg-amber-500 text-slate-900 shadow-lg transition">🏆 팀 점수 집계표</button>
+        <button onclick="switchTab('player')" id="playerTabBtn" class="px-6 py-2.5 rounded-xl font-black text-base bg-slate-800 text-slate-400 hover:bg-slate-700 transition">👤 플레이어별 스탯표</button>
+    </div>
+
+    <!-- 1. 팀 점수 집계 뷰 -->
+    <div id="teamView" class="space-y-4">
+        <div class="max-w-[1400px] mx-auto bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg">
+            <div class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-700 pb-4 mb-4">
+                <div class="flex items-center gap-3">
+                    <span class="text-xl font-black text-amber-400">🏆 대회 집계기 컨트롤러</span>
+                    <input type="text" id="tournamentTitle" value="" oninput="saveAndRenderTeam()" class="bg-slate-900 border border-slate-600 rounded px-3 py-1 text-sm font-bold text-amber-300" placeholder="대회 타이틀 입력">
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <button onclick="addRound()" class="bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 rounded text-sm font-bold">+ 라운드 추가</button>
+                    <button onclick="removeRound()" class="bg-rose-600 hover:bg-rose-500 px-3 py-1.5 rounded text-sm font-bold">- 마지막 라운드 삭제</button>
+                    <button onclick="captureElement('teamCaptureArea', '팀_점수_집계표.png')" class="bg-purple-600 hover:bg-purple-500 px-4 py-1.5 rounded text-sm font-bold">📷 팀 표 캡처하기</button>
+                    <button onclick="resetTeamData()" class="bg-slate-600 hover:bg-slate-500 px-3 py-1.5 rounded text-sm">초기화</button>
+                </div>
+            </div>
+            <div class="text-xs text-slate-300 mb-3">
+                <span class="font-bold text-amber-400">적용 배점 룰:</span> 
+                1위(10점), 2위(8점), 3위(6점), 4위(4점), 5위(2점), 6위~(0점) | 기본 1킬 = 1점 (막라 킬 2배 체크 시 1킬 = 2점) | 경매 잔여 포인트(+) 합산
+            </div>
+            <div id="roundSettings" class="flex flex-wrap gap-2.5 items-center text-xs"></div>
+        </div>
+
+        <div id="teamCaptureArea" class="max-w-[1400px] mx-auto overflow-x-auto shadow-2xl rounded-lg bg-slate-900 p-2">
+            <table class="scoreboard text-sm" id="scoreTable">
+                <thead id="teamTableHead"></thead>
+                <tbody id="teamTableBody"></tbody>
+            </table>
+        </div>
+
+        <div class="max-w-[1400px] mx-auto bg-slate-800 p-4 rounded-xl border border-slate-700">
+            <div class="flex justify-between items-center mb-3">
+                <h3 class="font-bold text-amber-400">📋 참가 팀 명단 & 경매 잔여 포인트 입력</h3>
+                <span class="text-xs text-slate-400">입력 시 상단 표에 실시간 반영 및 자동 저장됩니다.</span>
+            </div>
+            <div id="teamListEditor" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3"></div>
+        </div>
+    </div>
+
+    <!-- 2. 플레이어 스탯 뷰 -->
+    <div id="playerView" class="space-y-4 hidden">
+        <div class="max-w-[1400px] mx-auto bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg flex flex-wrap justify-between items-center gap-4">
+            <div>
+                <h2 class="text-xl font-bold text-amber-400">👤 플레이어별 킬 & 데미지 스탯 관리</h2>
+                <p class="text-xs text-slate-400 mt-1">입력창 텍스트가 셀 상하좌우 완벽한 정중앙에 위치하도록 전면 수정되었습니다.</p>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="captureElement('playerCaptureArea', '플레이어_스탯표.png')" class="bg-purple-600 hover:bg-purple-500 px-4 py-1.5 rounded text-sm font-bold">📷 플레이어 표 캡처하기</button>
+                <button onclick="resetPlayerData()" class="bg-slate-600 hover:bg-slate-500 px-3 py-1.5 rounded text-sm">플레이어 데이터 초기화</button>
+            </div>
+        </div>
+
+        <div id="playerCaptureArea" class="max-w-[1400px] mx-auto overflow-x-auto shadow-2xl rounded-lg bg-slate-900 p-2">
+            <table class="scoreboard text-sm" id="playerTable">
+                <thead id="playerTableHead"></thead>
+                <tbody id="playerTableBody"></tbody>
+            </table>
+        </div>
+
+        <div class="max-w-[1400px] mx-auto bg-slate-800 p-4 rounded-xl border border-slate-700">
+            <div class="flex flex-wrap justify-between items-center mb-3 gap-2">
+                <h3 class="font-bold text-amber-400">📋 선수 등록 및 정보 수정</h3>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs text-slate-300">총 선수 인원:</span>
+                    <input type="number" id="totalPlayerCountInput" value="16" min="1" max="100" class="w-16 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm font-bold text-amber-300 text-center">
+                    <button onclick="setTotalPlayers()" class="bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 rounded text-xs font-bold">인원 적용하기</button>
+                </div>
+            </div>
+            <div id="playerListEditor" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3"></div>
+        </div>
+    </div>
+
+    <script>
+        function getPlacementPoints(rank) {
+            const points = { 1: 10, 2: 8, 3: 6, 4: 4, 5: 2 };
+            return points[rank] || 0;
+        }
+
+        function captureElement(elementId, filename) {
+            const target = document.getElementById(elementId);
+            document.activeElement?.blur();
+
+            html2canvas(target, {
+                scale: 2,
+                useCORS: true,
+                backgroundColor: '#0f172a'
+            }).then(canvas => {
+                const link = document.createElement('a');
+                link.download = filename;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            });
+        }
+
+        function switchTab(tabName) {
+            const teamView = document.getElementById('teamView');
+            const playerView = document.getElementById('playerView');
+            const teamBtn = document.getElementById('teamTabBtn');
+            const playerBtn = document.getElementById('playerTabBtn');
+
+            if (tabName === 'team') {
+                teamView.classList.remove('hidden');
+                playerView.classList.add('hidden');
+                teamBtn.className = "px-6 py-2.5 rounded-xl font-black text-base bg-amber-500 text-slate-900 shadow-lg transition";
+                playerBtn.className = "px-6 py-2.5 rounded-xl font-black text-base bg-slate-800 text-slate-400 hover:bg-slate-700 transition";
+            } else {
+                teamView.classList.add('hidden');
+                playerView.classList.remove('hidden');
+                playerBtn.className = "px-6 py-2.5 rounded-xl font-black text-base bg-amber-500 text-slate-900 shadow-lg transition";
+                teamBtn.className = "px-6 py-2.5 rounded-xl font-black text-base bg-slate-800 text-slate-400 hover:bg-slate-700 transition";
+                renderPlayer();
+            }
+        }
+
+        const defaultTeamData = {
+            title: "",
+            roundConfigs: [
+                { map: "ERANGEL", doubleKill: false },
+                { map: "MIRAMAR", doubleKill: false },
+                { map: "TAEGO", doubleKill: false },
+                { map: "ERANGEL", doubleKill: false }
+            ],
+            teams: Array.from({ length: 16 }, (_, i) => ({
+                id: i + 1,
+                code: `#${String(i + 1).padStart(2, '0')}`,
+                players: "",
+                auctionPoints: 0,
+                rounds: Array.from({ length: 4 }, () => ({ rank: 0, kills: 0 }))
+            }))
+        };
+
+        let teamState = JSON.parse(localStorage.getItem('pubg_team_data_v38')) || defaultTeamData;
+
+        const defaultPlayerData = {
+            players: Array.from({ length: 16 }, (_, i) => ({
+                id: i + 1,
+                tier: "1티어",
+                player: `선수${i+1}`,
+                nickname: `Nick${i+1}`,
+                rounds: Array.from({ length: 4 }, () => ({ kill: 0, damage: 0 })),
+                headshot: 0,
+                assist: 0,
+                revive: 0,
+                totalTime: "00:00:00",
+                avgTime: "00:00:00"
+            }))
+        };
+
+        let playerState = JSON.parse(localStorage.getItem('pubg_player_data_v38')) || defaultPlayerData;
+
+        const roundColors = [
+            { bg: 'bg-rose-200', sub: 'bg-rose-100' },
+            { bg: 'bg-amber-200', sub: 'bg-amber-100' },
+            { bg: 'bg-emerald-200', sub: 'bg-emerald-100' },
+            { bg: 'bg-purple-200', sub: 'bg-purple-100' },
+            { bg: 'bg-sky-200', sub: 'bg-sky-100' },
+            { bg: 'bg-orange-200', sub: 'bg-orange-100' }
+        ];
+
+        function saveAndRenderTeam() {
+            teamState.title = document.getElementById('tournamentTitle').value;
+            localStorage.setItem('pubg_team_data_v38', JSON.stringify(teamState));
+            renderTeam();
+        }
+
+        function addRound() {
+            teamState.roundConfigs.push({ map: "ERANGEL", doubleKill: false });
+            teamState.teams.forEach(t => t.rounds.push({ rank: 0, kills: 0 }));
+            playerState.players.forEach(p => p.rounds.push({ kill: 0, damage: 0 }));
+            localStorage.setItem('pubg_player_data_v38', JSON.stringify(playerState));
+            saveAndRenderTeam();
+        }
+
+        function removeRound() {
+            if (teamState.roundConfigs.length <= 1) return alert("최소 1개의 라운드는 필요합니다.");
+            teamState.roundConfigs.pop();
+            teamState.teams.forEach(t => t.rounds.pop());
+            playerState.players.forEach(p => p.rounds.pop());
+            localStorage.setItem('pubg_player_data_v38', JSON.stringify(playerState));
+            saveAndRenderTeam();
+        }
+
+        function updateRoundConfig(rIdx, field, val) {
+            if (field === 'map') teamState.roundConfigs[rIdx].map = val.toUpperCase();
+            else if (field === 'doubleKill') teamState.roundConfigs[rIdx].doubleKill = val;
+            saveAndRenderTeam();
+        }
+
+        function updateScore(teamId, rIdx, field, val) {
+            const team = teamState.teams.find(t => t.id === teamId);
+            if (team) {
+                team.rounds[rIdx][field] = parseInt(val) || 0;
+                saveAndRenderTeam();
+            }
+        }
+
+        function updateTeamInfo(teamId, field, val) {
+            const team = teamState.teams.find(t => t.id === teamId);
+            if (team) {
+                if (field === 'auctionPoints') team[field] = parseInt(val) || 0;
+                else team[field] = val;
+                saveAndRenderTeam();
+            }
+        }
+
+        function resetTeamData() {
+            if (confirm("팀 집계 데이터를 초기화하시겠습니까?")) {
+                localStorage.removeItem('pubg_team_data_v38');
+                location.reload();
+            }
+        }
+
+        function renderTeam() {
+            document.getElementById('tournamentTitle').value = teamState.title;
+
+            let roundCtrlHtml = '<span class="font-bold text-slate-400">라운드 설정:</span>';
+            teamState.roundConfigs.forEach((cfg, idx) => {
+                const activeBorder = cfg.doubleKill ? 'border-rose-500 bg-rose-950/40' : 'border-slate-700 bg-slate-900';
+                roundCtrlHtml += `<div class="flex items-center gap-2 px-2.5 py-1.5 rounded border ${activeBorder}">
+                    <span class="text-amber-400 font-black">R${idx+1}</span>
+                    <input type="text" value="${cfg.map}" onchange="updateRoundConfig(${idx}, 'map', this.value)" class="w-20 bg-slate-800 border border-slate-600 rounded px-1.5 py-0.5 text-white font-bold text-center focus:outline-none">
+                    <label class="flex items-center gap-1 cursor-pointer select-none text-rose-300 font-bold">
+                        <input type="checkbox" ${cfg.doubleKill ? 'checked' : ''} onchange="updateRoundConfig(${idx}, 'doubleKill', this.checked)" class="accent-rose-500 w-3.5 h-3.5">
+                        <span>킬 2배</span>
+                    </label>
+                </div>`;
+            });
+            document.getElementById('roundSettings').innerHTML = roundCtrlHtml;
+
+            let activeRoundCount = 0;
+            teamState.roundConfigs.forEach((_, rIdx) => {
+                const hasData = teamState.teams.some(t => (t.rounds[rIdx]?.rank || 0) > 0 || (t.rounds[rIdx]?.kills || 0) > 0);
+                if (hasData) activeRoundCount = rIdx + 1;
+            });
+
+            let prevRanks = {};
+            if (activeRoundCount > 1) {
+                const prevSorted = [...teamState.teams].map(t => {
+                    let pts = t.auctionPoints || 0, killPts = 0;
+                    for (let i = 0; i < activeRoundCount - 1; i++) {
+                        const r = t.rounds[i] || { rank: 0, kills: 0 };
+                        const mult = teamState.roundConfigs[i]?.doubleKill ? 2 : 1;
+                        const kPts = r.kills * mult;
+                        pts += getPlacementPoints(r.rank) + kPts;
+                        killPts += kPts;
+                    }
+                    return { id: t.id, pts, killPts };
+                }).sort((a, b) => b.pts - a.pts || b.killPts - a.killPts || a.id - b.id);
+                prevSorted.forEach((item, idx) => prevRanks[item.id] = idx + 1);
+            }
+
+            const calculatedTeams = teamState.teams.map(t => {
+                let rankPtsSum = 0, killPtsSum = 0;
+                const auctionPts = t.auctionPoints || 0;
+                const roundDetails = t.rounds.map((r, rIdx) => {
+                    const pPts = getPlacementPoints(r.rank);
+                    const mult = teamState.roundConfigs[rIdx]?.doubleKill ? 2 : 1;
+                    const kPts = r.kills * mult;
+                    const rTotal = pPts + kPts;
+                    rankPtsSum += pPts;
+                    killPtsSum += kPts;
+                    return { ...r, pPts, kPts, mult, rTotal };
+                });
+                const grandTotal = rankPtsSum + killPtsSum + auctionPts;
+                return { ...t, rankPtsSum, killPtsSum, auctionPts, grandTotal, roundDetails };
+            }).sort((a, b) => b.grandTotal - a.grandTotal || b.killPtsSum - a.killPtsSum || a.id - b.id);
+
+            let thead = `
+                <tr>
+                    <th rowspan="2" colspan="2" class="bg-amber-100 p-0 w-24">
+                        <div class="exact-center-th font-title text-xl text-amber-900 leading-none">${teamState.title || 'PUBG'}</div>
+                    </th>
+                    <th class="bg-slate-200 p-0 text-xs font-black"><div class="exact-center-th">TEAM</div></th>
+                    <th class="bg-slate-200 p-0 text-xs font-black min-w-[160px]"><div class="exact-center-th">PLAYER</div></th>
+                    <th colspan="4" class="bg-white p-0 text-2xl font-title tracking-wider text-black"><div class="exact-center-th">TOTAL</div></th>
+            `;
+            teamState.roundConfigs.forEach((cfg, idx) => {
+                const color = roundColors[idx % roundColors.length];
+                const doubleBadge = cfg.doubleKill ? `<span class="ml-1 bg-rose-600 text-white text-[10px] px-1.5 py-0.5 rounded font-black">KILL x2</span>` : '';
+                thead += `<th colspan="4" class="${color.bg} p-0">
+                    <div class="round-header-box">
+                        <div class="text-xs font-black flex items-center justify-center">ROUND ${idx + 1}${doubleBadge}</div>
+                        <div class="text-[10px] font-extrabold text-slate-800">${cfg.map}</div>
+                    </div>
+                </th>`;
+            });
+            thead += `</tr><tr class="text-xs font-black">
+                <th class="bg-slate-100 p-0"><div class="exact-center-th">번호</div></th>
+                <th class="bg-slate-100 p-0"><div class="exact-center-th">팀원 명단</div></th>
+                <th class="bg-slate-400 text-white p-0 w-12"><div class="exact-center-th">Total</div></th>
+                <th class="bg-slate-400 text-white p-0 w-11"><div class="exact-center-th">Rank</div></th>
+                <th class="bg-slate-400 text-white p-0 w-11"><div class="exact-center-th">Kill</div></th>
+                <th class="bg-slate-400 text-white p-0 w-10" title="경매 잔여 포인트"><div class="exact-center-th">+</div></th>
+            `;
+            teamState.roundConfigs.forEach((cfg, idx) => {
+                const color = roundColors[idx % roundColors.length];
+                thead += `
+                    <th colspan="2" class="${color.sub} p-0"><div class="exact-center-th">Rank</div></th>
+                    <th class="${color.sub} p-0 w-14"><div class="exact-center-th">${cfg.doubleKill ? 'Kill(x2)' : 'Kill'}</div></th>
+                    <th class="${color.sub} p-0 w-12"><div class="exact-center-th">Total</div></th>
+                `;
+            });
+            thead += `</tr>`;
+            document.getElementById('teamTableHead').innerHTML = thead;
+
+            let tbody = '';
+            calculatedTeams.forEach((team, idx) => {
+                const currentRank = idx + 1;
+                let diffHtml = '<span class="text-slate-400 font-bold">-</span>';
+                if (activeRoundCount > 1 && prevRanks[team.id] !== undefined) {
+                    const diff = prevRanks[team.id] - currentRank;
+                    if (diff > 0) diffHtml = `<span class="inline-block bg-red-100 text-red-600 font-black text-xs px-1.5 py-0.5 rounded">▲${diff}</span>`;
+                    else if (diff < 0) diffHtml = `<span class="inline-block bg-blue-100 text-blue-600 font-black text-xs px-1.5 py-0.5 rounded">▼${Math.abs(diff)}</span>`;
+                }
+
+                let rankBadge = `<span class="font-black text-base">${currentRank}</span>`;
+                if (currentRank === 1) rankBadge = `<span class="text-xl" title="1위">🥇</span>`;
+                else if (currentRank === 2) rankBadge = `<span class="text-xl" title="2위">🥈</span>`;
+                else if (currentRank === 3) rankBadge = `<span class="text-xl" title="3위">🥉</span>`;
+
+                tbody += `<tr class="hover:bg-slate-50">
+                    <td class="w-9 bg-white p-0"><div class="exact-center-th">${diffHtml}</div></td>
+                    <td class="w-10 bg-white p-0"><div class="exact-center-th">${rankBadge}</div></td>
+                    <td class="font-black text-sm bg-white p-0"><div class="exact-center-th">${team.code}</div></td>
+                    <td class="bg-white p-0 text-xs font-bold whitespace-nowrap min-w-[160px]"><div class="exact-center-th">${team.players}</div></td>
+                    <td class="bg-slate-300 font-black text-base text-red-600 p-0"><div class="exact-center-th">${team.grandTotal}</div></td>
+                    <td class="bg-slate-300 font-bold p-0"><div class="exact-center-th">${team.rankPtsSum}</div></td>
+                    <td class="bg-slate-300 font-bold p-0"><div class="exact-center-th">${team.killPtsSum}</div></td>
+                    <td class="bg-slate-300 font-bold text-blue-800 p-0"><div class="exact-center-th">${team.auctionPoints}</div></td>
+                `;
+
+                team.roundDetails.forEach((r, rIdx) => {
+                    const isChicken = r.rank === 1;
+                    const cellBg = isChicken ? 'chicken-highlight' : 'bg-white';
+                    const totalBg = isChicken ? 'chicken-highlight' : 'bg-slate-200';
+
+                    tbody += `
+                        <td class="${cellBg} p-0 w-12">
+                            <input type="number" min="0" max="16" value="${r.rank || ''}" onchange="updateScore(${team.id}, ${rIdx}, 'rank', this.value)" class="clean-input">
+                        </td>
+                        <td class="${cellBg} font-bold text-xs text-slate-600 w-9 p-0"><div class="exact-center-th">${r.pPts}</div></td>
+                        <td class="${cellBg} p-0 w-16">
+                            <div class="flex items-center justify-center gap-1 w-full h-full">
+                                <input type="number" min="0" value="${r.kills || ''}" onchange="updateScore(${team.id}, ${rIdx}, 'kills', this.value)" class="clean-input w-10">
+                                ${r.mult === 2 ? `<span class="text-[11px] font-black text-rose-600">→${r.kPts}</span>` : ''}
+                            </div>
+                        </td>
+                        <td class="${totalBg} font-black p-0"><div class="exact-center-th">${r.rTotal}</div></td>
+                    `;
+                });
+                tbody += `</tr>`;
+            });
+            document.getElementById('teamTableBody').innerHTML = tbody;
+
+            let editorHtml = '';
+            teamState.teams.forEach(t => {
+                editorHtml += `<div class="bg-slate-900 p-2.5 rounded border border-slate-700 text-xs space-y-2">
+                    <div class="flex items-center justify-between gap-2">
+                        <div class="flex items-center gap-1.5">
+                            <input type="text" value="${t.code}" onchange="updateTeamInfo(${t.id}, 'code', this.value)" class="w-14 bg-slate-800 border border-slate-600 rounded px-1.5 py-0.5 font-bold text-amber-400 text-center" placeholder="#00">
+                            <span class="text-slate-400">팀</span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <span class="text-sky-400 font-bold">경매 잔여:</span>
+                            <input type="number" min="0" value="${t.auctionPoints || ''}" onchange="updateTeamInfo(${t.id}, 'auctionPoints', this.value)" class="w-16 bg-slate-800 border border-sky-700 rounded px-1.5 py-0.5 font-bold text-sky-300 text-center" placeholder="0">
+                        </div>
+                    </div>
+                    <input type="text" value="${t.players}" onchange="updateTeamInfo(${t.id}, 'players', this.value)" class="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white" placeholder="선수 명단 (예: 선수1 / 선수2 / 선수3 / 선수4)">
+                </div>`;
+            });
+            document.getElementById('teamListEditor').innerHTML = editorHtml;
+        }
+
+        function setTotalPlayers() {
+            const countInput = document.getElementById('totalPlayerCountInput');
+            const targetCount = parseInt(countInput.value) || 16;
+            const currentRoundLen = teamState.roundConfigs.length;
+
+            if (targetCount < playerState.players.length) {
+                if (!confirm(`설정한 인원(${targetCount}명)이 현재 인원보다 적습니다. 초과하는 선수는 삭제됩니다. 계속하시겠습니까?`)) {
+                    countInput.value = playerState.players.length;
+                    return;
+                }
+                playerState.players = playerState.players.slice(0, targetCount);
+            } else if (targetCount > playerState.players.length) {
+                const addCount = targetCount - playerState.players.length;
+                for (let i = 0; i < addCount; i++) {
+                    const newId = playerState.players.length > 0 ? Math.max(...playerState.players.map(p => p.id)) + 1 : 1;
+                    playerState.players.push({
+                        id: newId,
+                        tier: "1티어",
+                        player: `선수${newId}`,
+                        nickname: `Nick${newId}`,
+                        rounds: Array.from({ length: currentRoundLen }, () => ({ kill: 0, damage: 0 })),
+                        headshot: 0,
+                        assist: 0,
+                        revive: 0,
+                        totalTime: "00:00:00",
+                        avgTime: "00:00:00"
+                    });
+                }
+            }
+            saveAndRenderPlayer();
+        }
+
+        function parseAndFormatTime(inputVal) {
+            if (!inputVal) return "00:00:00";
+            let str = String(inputVal).trim();
+            if (str === "" || str === "00:00:00") return "00:00:00";
+
+            let totalSeconds = 0;
+            const hourMatch = str.match(/(\d+)\s*시간/);
+            const minMatch = str.match(/(\d+)\s*분/);
+            const secMatch = str.match(/(\d+)\s*초/);
+
+            if (hourMatch || minMatch || secMatch) {
+                let h = hourMatch ? parseInt(hourMatch[1]) : 0;
+                let m = minMatch ? parseInt(minMatch[1]) : 0;
+                let s = secMatch ? parseInt(secMatch[1]) : 0;
+                totalSeconds = h * 3600 + m * 60 + s;
+            } else if (str.includes(":")) {
+                let parts = str.split(":").map(p => parseInt(p) || 0);
+                if (parts.length === 3) {
+                    totalSeconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+                } else if (parts.length === 2) {
+                    totalSeconds = parts[0] * 60 + parts[1];
+                }
+            } else {
+                let num = parseInt(str);
+                if (!isNaN(num)) totalSeconds = num;
+            }
+
+            if (totalSeconds <= 0) return "00:00:00";
+
+            let hrs = Math.floor(totalSeconds / 3600);
+            let mins = Math.floor((totalSeconds % 3600) / 60);
+            let secs = totalSeconds % 60;
+
+            return String(hrs).padStart(2, '0') + ":" +
+                   String(mins).padStart(2, '0') + ":" +
+                   String(secs).padStart(2, '0');
+        }
+
+        function timeToSeconds(timeStr) {
+            if (!timeStr || !timeStr.includes(":")) return 0;
+            let parts = timeStr.split(":").map(p => parseInt(p) || 0);
+            if (parts.length === 3) {
+                return parts[0] * 3600 + parts[1] * 60 + parts[2];
+            } else if (parts.length === 2) {
+                return parts[0] * 60 + parts[1];
+            }
+            return 0;
+        }
+
+        function secondsToTime(totalSeconds) {
+            if (isNaN(totalSeconds) || totalSeconds <= 0) return "00:00:00";
+            let hrs = Math.floor(totalSeconds / 3600);
+            let mins = Math.floor((totalSeconds % 3600) / 60);
+            let secs = Math.round(totalSeconds % 60);
+
+            return String(hrs).padStart(2, '0') + ":" +
+                   String(mins).padStart(2, '0') + ":" +
+                   String(secs).padStart(2, '0');
+        }
+
+        function updatePlayerInfo(id, field, val) {
+            const p = playerState.players.find(x => x.id === id);
+            if (p) {
+                if (field === 'totalTime') {
+                    p.totalTime = parseAndFormatTime(val);
+                    const totalSec = timeToSeconds(p.totalTime);
+                    const roundCount = teamState.roundConfigs.length;
+                    if (roundCount > 0 && totalSec > 0) {
+                        p.avgTime = secondsToTime(totalSec / roundCount);
+                    } else {
+                        p.avgTime = "00:00:00";
+                    }
+                } else {
+                    p[field] = val;
+                }
+                saveAndRenderPlayer();
+            }
+        }
+
+        function updatePlayerStat(id, rIdx, field, val) {
+            const p = playerState.players.find(x => x.id === id);
+            if (p) {
+                p.rounds[rIdx][field] = parseInt(val) || 0;
+                saveAndRenderPlayer();
+            }
+        }
+
+        function resetPlayerData() {
+            if (confirm("플레이어 스탯 데이터를 초기화하시겠습니까?")) {
+                localStorage.removeItem('pubg_player_data_v38');
+                location.reload();
+            }
+        }
+
+        function saveAndRenderPlayer() {
+            localStorage.setItem('pubg_player_data_v38', JSON.stringify(playerState));
+            renderPlayer();
+        }
+
+        function renderPlayer() {
+            document.getElementById('totalPlayerCountInput').value = playerState.players.length;
+
+            const calculatedPlayers = playerState.players.map(p => {
+                let totalKill = 0, totalDamage = 0;
+                const roundStats = p.rounds.map(r => {
+                    totalKill += (r.kill || 0);
+                    totalDamage += (r.damage || 0);
+                    return r;
+                });
+                return { ...p, totalKill, totalDamage, roundStats };
+            }).sort((a, b) => b.totalKill - a.totalKill || b.totalDamage - a.totalDamage || a.id - b.id);
+
+            let thead = `<tr>
+                <th rowspan="2" class="bg-amber-100 p-0 w-12 text-amber-900"><div class="exact-center-th text-xs font-black">순위</div></th>
+                <th rowspan="2" class="bg-slate-200 p-0 w-16"><div class="exact-center-th text-xs font-black">TIER</div></th>
+                <th rowspan="2" class="bg-slate-200 p-0 min-w-[100px]"><div class="exact-center-th text-xs font-black">Player</div></th>
+                <th rowspan="2" class="bg-slate-200 p-0 min-w-[110px]"><div class="exact-center-th text-xs font-black">Nick Name</div></th>
+                <th colspan="2" class="bg-white p-0"><div class="exact-center-th text-lg font-title text-black">TOTAL</div></th>
+            `;
+            teamState.roundConfigs.forEach((cfg, idx) => {
+                const color = roundColors[idx % roundColors.length];
+                thead += `<th colspan="2" class="${color.bg} p-0">
+                    <div class="round-header-box py-1">
+                        <div class="text-xs font-black">ROUND ${idx + 1}</div>
+                        <div class="text-[10px] font-extrabold text-slate-800">${cfg.map}</div>
+                    </div>
+                </th>`;
+            });
+            thead += `
+                <th rowspan="2" class="bg-slate-300 p-0 w-12"><div class="exact-center-th text-xs font-black">헤드</div></th>
+                <th rowspan="2" class="bg-slate-300 p-0 w-12"><div class="exact-center-th text-xs font-black">어시</div></th>
+                <th rowspan="2" class="bg-slate-300 p-0 w-12"><div class="exact-center-th text-xs font-black">소생</div></th>
+                <th rowspan="2" class="bg-slate-300 p-0 w-24"><div class="exact-center-th text-xs font-black">총생존시간</div></th>
+                <th rowspan="2" class="bg-slate-300 p-0 w-24"><div class="exact-center-th text-xs font-black">평균생존시간</div></th>
+            </tr>`;
+            
+            thead += `<tr class="text-xs font-black">
+                <th class="bg-slate-400 text-white p-0 w-12"><div class="exact-center-th">Kill</div></th>
+                <th class="bg-slate-400 text-white p-0 w-16"><div class="exact-center-th">Damage</div></th>
+            `;
+            teamState.roundConfigs.forEach((_, idx) => {
+                const color = roundColors[idx % roundColors.length];
+                thead += `
+                    <th class="${color.sub} p-0 w-10"><div class="exact-center-th">Kill</div></th>
+                    <th class="${color.sub} p-0 w-14"><div class="exact-center-th">Dmg</div></th>
+                `;
+            });
+            thead += `</tr>`;
+            document.getElementById('playerTableHead').innerHTML = thead;
+
+            let tbody = '';
+            calculatedPlayers.forEach((p, idx) => {
+                const rank = idx + 1;
+                let rankBadge = `${rank}`;
+                if (rank === 1) rankBadge = `🥇`;
+                else if (rank === 2) rankBadge = `🥈`;
+                else if (rank === 3) rankBadge = `🥉`;
+
+                const totalTimeVal = (p.totalTime !== undefined && p.totalTime !== "") ? p.totalTime : "00:00:00";
+                const avgTimeVal = (p.avgTime !== undefined && p.avgTime !== "") ? p.avgTime : "00:00:00";
+
+                tbody += `<tr class="hover:bg-slate-50">
+                    <td class="bg-white p-0"><div class="exact-center-th font-black text-sm">${rankBadge}</div></td>
+                    <td class="bg-white p-0"><div class="exact-center-th font-bold text-xs">${p.tier}</div></td>
+                    <td class="bg-white p-0"><div class="exact-center-th font-bold text-xs">${p.player}</div></td>
+                    <td class="bg-white p-0 text-slate-700"><div class="exact-center-th font-bold text-xs">${p.nickname}</div></td>
+                    <td class="bg-slate-300 p-0"><div class="exact-center-th font-black text-red-600">${p.totalKill}</div></td>
+                    <td class="bg-slate-300 p-0"><div class="exact-center-th font-bold">${p.totalDamage}</div></td>
+                `;
+
+                p.roundStats.forEach((r, rIdx) => {
+                    tbody += `
+                        <td class="bg-white p-0 w-10">
+                            <input type="number" min="0" value="${r.kill || ''}" onchange="updatePlayerStat(${p.id}, ${rIdx}, 'kill', this.value)" class="clean-input">
+                        </td>
+                        <td class="bg-white p-0 w-14">
+                            <input type="number" min="0" value="${r.damage || ''}" onchange="updatePlayerStat(${p.id}, ${rIdx}, 'damage', this.value)" class="clean-input">
+                        </td>
+                    `;
+                });
+
+                tbody += `
+                    <td class="bg-slate-100 p-0"><input type="number" min="0" value="${p.headshot || ''}" onchange="updatePlayerInfo(${p.id}, 'headshot', this.value)" class="clean-input"></td>
+                    <td class="bg-slate-100 p-0"><input type="number" min="0" value="${p.assist || ''}" onchange="updatePlayerInfo(${p.id}, 'assist', this.value)" class="clean-input"></td>
+                    <td class="bg-slate-100 p-0"><input type="number" min="0" value="${p.revive || ''}" onchange="updatePlayerInfo(${p.id}, 'revive', this.value)" class="clean-input"></td>
+                    <td class="bg-slate-100 p-0"><input type="text" value="${totalTimeVal}" onchange="updatePlayerInfo(${p.id}, 'totalTime', this.value)" class="time-input" placeholder="00:00:00"></td>
+                    <td class="bg-slate-100 p-0"><input type="text" value="${avgTimeVal}" readonly class="time-input bg-slate-200/50 cursor-default" title="총생존시간 / 라운드수 자동계산"></td>
+                </tr>`;
+            });
+            document.getElementById('playerTableBody').innerHTML = tbody;
+
+            let editorHtml = '';
+            playerState.players.forEach(p => {
+                editorHtml += `<div class="bg-slate-900 p-2.5 rounded border border-slate-700 text-xs space-y-2">
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="font-bold text-amber-400">선수 ID: ${p.id}</span>
+                        <input type="text" value="${p.tier}" onchange="updatePlayerInfo(${p.id}, 'tier', this.value)" class="w-16 bg-slate-800 border border-slate-600 rounded px-1 py-0.5 font-bold text-amber-300 text-center" placeholder="티어">
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <input type="text" value="${p.player}" onchange="updatePlayerInfo(${p.id}, 'player', this.value)" class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white font-bold" placeholder="Player 이름">
+                        <input type="text" value="${p.nickname}" onchange="updatePlayerInfo(${p.id}, 'nickname', this.value)" class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-300 font-bold" placeholder="인게임 닉네임">
+                    </div>
+                </div>`;
+            });
+            document.getElementById('playerListEditor').innerHTML = editorHtml;
+        }
+
+        renderTeam();
+    </script>
+</body>
+</html>
